@@ -6,7 +6,7 @@ from google.adk.agents import Agent
 
 from .tools import ALL_TOOLS
 
-MODEL = "gemini-2.0-flash"
+MODEL = "gemini-3.1-flash-lite"
 
 INSTRUCTION = """\
 You are a helpful mutual fund and stock analysis assistant.
