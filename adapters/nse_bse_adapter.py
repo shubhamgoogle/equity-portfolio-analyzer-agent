@@ -84,6 +84,27 @@ _NORMALIZED_KEYS = (
     "marketCap",
     "lastUpdateTime",
     "currency",
+    # --- NSE-specific enrichment (None for BSE/nsetools) -----------------
+    # All of these come from the same nse_eq response we already make, so
+    # they cost nothing extra. See `_fetch_via_nsepython` for the mapping.
+    "vwap",
+    "upperCircuit",
+    "lowerCircuit",
+    "priceBand",
+    "tickSize",
+    "basePrice",
+    "listingDate",
+    "faceValue",
+    "issuedSize",
+    "surveillance",      # ASM / GSM stage if applicable
+    "tradingStatus",
+    "isFnoSec",
+    "isEtfSec",
+    "sectorPE",
+    "symbolPE",
+    "nseSector",
+    "nseMacro",
+    "nseBasicIndustry",
 )
 
 
@@ -192,8 +213,20 @@ class NseBseAdapter(BaseStockAdapter):
         info = raw.get("info") or {}
         price = raw.get("priceInfo") or {}
         metadata = raw.get("metadata") or {}
+        security = raw.get("securityInfo") or {}
+        industry_info = raw.get("industryInfo") or {}
         wh = price.get("weekHighLow") or {}
         idh = price.get("intraDayHighLow") or {}
+
+        # `surveillance` is itself a small dict in modern nsepython —
+        # collapse to its `surv` (stage) field where present, else None.
+        surveillance_raw = security.get("surveillance")
+        if isinstance(surveillance_raw, dict):
+            surveillance = surveillance_raw.get("surv") or surveillance_raw.get(
+                "desc"
+            )
+        else:
+            surveillance = surveillance_raw
 
         return self._normalize(
             source="NSE (nsepython)",
@@ -213,6 +246,25 @@ class NseBseAdapter(BaseStockAdapter):
             fiftyTwoWeekLow=wh.get("min"),
             marketCap=None,  # nsepython doesn't return market cap here
             lastUpdateTime=metadata.get("lastUpdateTime"),
+            # --- NSE enrichment from the SAME response --------------------
+            vwap=price.get("vwap"),
+            upperCircuit=price.get("upperCP"),
+            lowerCircuit=price.get("lowerCP"),
+            priceBand=price.get("pPriceBand"),
+            tickSize=price.get("tickSize"),
+            basePrice=price.get("basePrice"),
+            listingDate=info.get("listingDate") or metadata.get("listingDate"),
+            faceValue=security.get("faceValue"),
+            issuedSize=security.get("issuedSize"),
+            surveillance=surveillance,
+            tradingStatus=security.get("tradingStatus"),
+            isFnoSec=info.get("isFNOSec"),
+            isEtfSec=info.get("isETFSec"),
+            sectorPE=metadata.get("pdSectorPe"),
+            symbolPE=metadata.get("pdSymbolPe"),
+            nseSector=industry_info.get("sector"),
+            nseMacro=industry_info.get("macro"),
+            nseBasicIndustry=industry_info.get("basicIndustry"),
         )
 
     # --- NSE: nsetools ------------------------------------------------------

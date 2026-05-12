@@ -53,11 +53,32 @@ to make multiple tool calls or chain them. The shape of the response:
     "normalized":    {"upper": "...", "nse_symbol": "...",
                       "looks_indian": true/false},
 
-    "yahoo":         <Yahoo Finance fundamentals: longName, sector,
-                      industry, currentPrice (+currency), marketCap,
-                      trailingPE, forwardPE, dividendYield (decimal,
-                      multiply by 100 for %), beta, fiftyTwoWeekLow/
-                      High, longBusinessSummary, ...> OR {"error": ...}
+    "yahoo":         <Yahoo Finance: ~170 raw fields from ticker.info
+                      (longName, sector, industry, currentPrice +
+                      currency, marketCap, trailingPE, forwardPE,
+                      dividendYield decimal-form, beta, fiftyTwoWeekLow/
+                      High, longBusinessSummary, heldPercentInsiders,
+                      heldPercentInstitutions, targetMeanPrice,
+                      recommendationKey, numberOfAnalystOpinions, ...)
+                      PLUS an `extras` block with:
+                        - statements.{periods, income, balance, cashflow}:
+                          5y series of revenue, gross_profit,
+                          operating_income, ebitda, ebit, net_income,
+                          interest_expense, basic/diluted EPS, total_debt,
+                          stockholders_equity, working_capital,
+                          invested_capital, cash, operating/investing/
+                          financing_cash_flow, free_cash_flow,
+                          capital_expenditure
+                        - derived: roce_latest, interest_coverage_latest,
+                          cash_conversion_latest (FCF/NI),
+                          revenue_cagr_3y / 4y, profit_cagr_*, eps_cagr_*,
+                          working_capital_latest, capex_latest, …
+                        - dividend_history.{recent, dividend_cagr_3y/5y}
+                        - split_history (full series)
+                        - analyst_trend.by_period (4 quarters of
+                          strongBuy/buy/hold/sell/strongSell counts —
+                          use to spot rating drift)
+                      OR {"error": ...}
 
     "twelvedata":    <Twelve Data: companyName, exchange, currency,
                       lastPrice, change, pChange, dayHigh/Low,
@@ -65,14 +86,25 @@ to make multiple tool calls or chain them. The shape of the response:
                       trailingPE, forwardPE, pegRatio, priceToSales,
                       priceToBook, profitMargin, returnOnEquity, beta,
                       dividendYield (decimal), sector, industry,
-                      country, employees, description, ...>
+                      country, employees, description.
+                      PLUS a `technicals` block (daily):
+                        rsi, macd, macd_signal, macd_hist,
+                        ema (20-day), upper_band/middle_band/lower_band
+                        (Bollinger), asOf, interval.>
                       OR {"error": ...}
 
     "nse_bse":       <Direct NSE/BSE quote: source ("NSE (nsepython)"
                       vs "BSE (bsedata)"), exchange, symbol,
                       companyName, industry, lastPrice (INR),
                       change/pChange, dayHigh/Low, fiftyTwoWeekHigh/
-                      Low, marketCap, lastUpdateTime>
+                      Low, marketCap, lastUpdateTime.
+                      PLUS (NSE only, no extra calls): vwap,
+                      upperCircuit/lowerCircuit/priceBand, tickSize,
+                      basePrice, listingDate, faceValue, issuedSize,
+                      surveillance (ASM/GSM stage if applicable; None
+                      means stock is unrestricted), tradingStatus,
+                      isFnoSec, isEtfSec, sectorPE, symbolPE,
+                      nseSector, nseMacro, nseBasicIndustry.>
                       OR {"error": ...} OR {"skipped": "..."} for
                       clearly non-Indian symbols.
 
@@ -139,20 +171,55 @@ WORKFLOW
        Fundamentals (cross-source)
          Bullet-list the most useful metrics. Prefer when available:
            - Valuation: trailingPE, forwardPE, pegRatio, priceToBook,
-                        priceToSales
+                        priceToSales, enterpriseToEbitda,
+                        enterpriseToRevenue. ALSO compare the symbol's
+                        P/E against `nse_bse.sectorPE` to flag relative
+                        cheapness/richness vs its sector.
            - Income:    dividendYield (as percent), profitMargin,
                         returnOnEquity, operatingMargin
            - Size:      marketCap, enterpriseValue, employees
            - Volatility: beta, fiftyTwoWeekHigh/Low range
+           - Trajectory (NEW — from yahoo.extras): revenue/profit/EPS
+                        CAGRs (3y), ROCE, interest coverage, cash
+                        conversion (FCF/NI), working capital. A 3y
+                        revenue CAGR + a stable/rising ROCE + interest
+                        coverage > 3× is a healthy combo.
+           - Dividends: payoutRatio, dividend_cagr_3y/5y (yahoo.extras),
+                        recent payouts list.
          Label each figure with its source in parentheses, e.g.
-         "P/E 24.3 (Yahoo) / 25.1 (Twelve Data)",
-         "52w range ₹1290–1611.8 (NSE)".
+         "P/E 24.3 (Yahoo) / 25.1 (Twelve Data) vs sector P/E 19.7 (NSE)",
+         "ROCE 11.5% (Yahoo) · revenue CAGR 6.4%/3y".
+
+       Technicals (NEW)
+         One short line summarizing momentum from `twelvedata.technicals`:
+           - RSI: >70 overbought, <30 oversold, 40-60 neutral.
+           - MACD: if macd > macd_signal → bullish crossover signal,
+                   especially if macd_hist is positive and growing.
+           - Bollinger: if lastPrice is near upper_band → stretched;
+                   near lower_band → potentially oversold; near
+                   middle_band → mean.
+           - Compare currentPrice to ema and to fiftyDay/twoHundredDayMA.
+         Skip if the technicals block is missing.
+
+       Indian-listed extras (only if `nse_bse` returned data)
+         Surface these when they're meaningfully informative:
+           - `surveillance`: if non-null, call it out FIRST — this is
+             the ASM/GSM stage and is a major risk signal.
+           - `tradingStatus`: anything other than "Active" is a red flag.
+           - `vwap` vs `lastPrice`: trading above VWAP intraday is
+             bullish, below is bearish.
+           - `upperCircuit` / `lowerCircuit` distance from current price
+             matters in volatile sessions.
+           - `isFnoSec`: True means options/futures are available —
+             tradable both directions.
 
        Recent context
          3-5 punchy bullets from `news.results`. If `news.answer` is
          present, lead with it as a one-line summary, then back it up
          with bulleted headlines. Cite source URLs inline where they
-         materially support a claim.
+         materially support a claim. Cross-reference with
+         `yahoo.extras.analyst_trend.by_period` — if rating counts are
+         drifting from buy → hold over the last 3 months, mention it.
 
        Verdict
          End with a short, opinionated takeaway:

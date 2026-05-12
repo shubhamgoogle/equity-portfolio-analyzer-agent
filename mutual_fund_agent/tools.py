@@ -35,8 +35,12 @@ _nse_bse_adapter = NseBseAdapter()
 _tavily_adapter = TavilyAdapter()
 
 # Per-adapter timeout (seconds). The NSE scraper occasionally takes a
-# while warming its cookie session; keep this generous but bounded.
-_ADAPTER_TIMEOUT = 25.0
+# while warming its cookie session, and TwelveData now serializes 4
+# indicator calls + 3 fundamentals calls = up to 7 HTTP round-trips
+# inside the 8 req/min Basic-tier window. Keep this generous so a slow
+# warm-up doesn't blank the technicals block; the cache amortizes most
+# of the cost across repeated lookups.
+_ADAPTER_TIMEOUT = 45.0
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -80,6 +84,18 @@ def _normalize_for_nse(symbol: str) -> str:
     s = symbol.strip().upper()
     if s.endswith(".NS") or s.endswith(".BO"):
         s = s.rsplit(".", 1)[0]
+    return s
+
+
+def _normalize_for_twelvedata(symbol: str) -> str:
+    """Twelve Data doesn't accept Yahoo's `.NS` / `.BO` Indian suffixes —
+    it expects the bare ticker (and resolves the exchange itself). Strip
+    those suffixes; leave other Yahoo suffixes (.L, .TO, etc.) alone
+    since Twelve Data handles them and we don't want to over-strip."""
+    s = symbol.strip()
+    upper = s.upper()
+    if upper.endswith(".NS") or upper.endswith(".BO"):
+        return s.rsplit(".", 1)[0]
     return s
 
 
@@ -143,6 +159,7 @@ def analyze_security(symbol: str) -> dict:
     raw_symbol = (symbol or "").strip()
     upper = raw_symbol.upper()
     nse_symbol = _normalize_for_nse(raw_symbol)
+    td_symbol = _normalize_for_twelvedata(raw_symbol)
     indian = _looks_indian(raw_symbol)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
@@ -150,7 +167,7 @@ def analyze_security(symbol: str) -> dict:
             _safe_call, "yfinance", _yfinance_adapter.get_stock_info, raw_symbol
         )
         fut_twelve = pool.submit(
-            _safe_call, "twelvedata", _twelvedata_adapter.get_stock_info, raw_symbol
+            _safe_call, "twelvedata", _twelvedata_adapter.get_stock_info, td_symbol
         )
         if indian:
             fut_nse = pool.submit(
@@ -191,6 +208,7 @@ def analyze_security(symbol: str) -> dict:
         "normalized": {
             "upper": upper,
             "nse_symbol": nse_symbol,
+            "td_symbol": td_symbol,
             "looks_indian": indian,
         },
         "yahoo": yahoo,

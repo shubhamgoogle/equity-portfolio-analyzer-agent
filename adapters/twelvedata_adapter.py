@@ -5,13 +5,17 @@ forex, crypto). It complements yfinance with cleaner valuation ratios
 and a polished company profile, and gives us a useful cross-check on
 the live quote.
 
-Endpoints used per lookup (3 calls total):
+Endpoints used per lookup (4 calls total):
   - `td.quote(symbol)`           → live price, day range, 52-week range
                                    (free / Basic tier, 1 credit)
   - `td.get_statistics(symbol)`  → P/E, market cap, dividend yield, beta
                                    (Pro tier, 50 credits)
   - `td.get_profile(symbol)`     → sector, industry, description, employees
                                    (Grow tier, 10 credits)
+  - chained technicals (RSI + MACD + EMA(20) + Bollinger Bands)
+                                   → all free Basic-tier, 4 credits total,
+                                   but issued as a single chained HTTP
+                                   request via `td.time_series(...)`
 
 NOTE on plan tiers: per Twelve Data's current pricing, only `/quote`
 is on the free Basic plan. `/profile` requires Grow and `/statistics`
@@ -101,6 +105,9 @@ class TwelveDataAdapter(BaseStockAdapter):
         out.update(self._fetch_quote(symbol, errors))
         out.update(self._fetch_statistics(symbol, errors))
         out.update(self._fetch_profile(symbol, errors))
+        technicals = self._fetch_technicals(symbol, errors)
+        if technicals:
+            out["technicals"] = technicals
 
         # If literally every Twelve Data call failed, surface a clean error.
         useful = {
@@ -119,6 +126,85 @@ class TwelveDataAdapter(BaseStockAdapter):
             out["partial_errors"] = errors
 
         self._cache_put(cache_key, out)
+        return out
+
+    # --- Technicals --------------------------------------------------------
+
+    # Keys we try to pluck from the latest row of the chained
+    # time-series response. The TwelveData time_series builder embeds
+    # each indicator's values either into the OHLC row itself or into
+    # a parallel list — we handle both shapes defensively.
+    _TECHNICAL_KEYS = (
+        "rsi",
+        "macd",
+        "macd_signal",
+        "macd_hist",
+        "ema",
+        "upper_band",
+        "middle_band",
+        "lower_band",
+    )
+
+    def _fetch_technicals(self, symbol: str, errors: list[str]) -> dict | None:
+        """One chained time-series request that pulls RSI + MACD + EMA(20)
+        + Bollinger Bands at daily resolution. All four are free
+        Basic-tier endpoints (1 credit each), and chaining them keeps it
+        to a single HTTP round-trip."""
+        try:
+            ts = self._client.time_series(
+                symbol=symbol, interval="1day", outputsize=1
+            )
+            raw = (
+                ts.with_rsi()
+                .with_macd()
+                .with_ema(time_period=20)
+                .with_bbands()
+                .as_json()
+            )
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"technicals: {e}")
+            return None
+
+        # The SDK returns a *tuple* of per-indicator results when
+        # multiple `with_*` calls are chained. Each element is either a
+        # list of dicts (most recent first) or a single dict. Walk every
+        # row of every element and grab any of our known keys.
+        if isinstance(raw, tuple):
+            blobs: list[Any] = list(raw)
+        elif isinstance(raw, list):
+            blobs = [raw]
+        elif isinstance(raw, dict):
+            blobs = [[raw]]
+        else:
+            errors.append(f"technicals: unexpected shape {type(raw).__name__}")
+            return None
+
+        out: dict[str, Any] = {}
+        as_of: str | None = None
+        for blob in blobs:
+            rows = blob if isinstance(blob, list) else [blob]
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                if as_of is None and isinstance(row.get("datetime"), str):
+                    as_of = row["datetime"]
+                for key in self._TECHNICAL_KEYS:
+                    if key in row and key not in out:
+                        v = row[key]
+                        # Twelve Data returns strings like "72.99920";
+                        # coerce to float when possible.
+                        try:
+                            out[key] = float(v) if v is not None else None
+                        except (TypeError, ValueError):
+                            out[key] = v
+                break  # outputsize=1 → only the first row is the latest
+
+        if not out:
+            return None
+        if as_of is not None:
+            out["asOf"] = as_of
+        out["interval"] = "1day"
+        # Tag for the LLM so it knows these are technicals, not fundamentals.
         return out
 
     # --- TTL cache ---------------------------------------------------------
