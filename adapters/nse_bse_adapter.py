@@ -25,7 +25,10 @@ regardless of which library produced it — see `_NORMALIZED_KEYS` below.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import logging
+import os
 from typing import Any
 
 from adapters.base_adapter import BaseStockAdapter
@@ -173,8 +176,13 @@ class NseBseAdapter(BaseStockAdapter):
     # --- NSE: nsepython -----------------------------------------------------
 
     def _fetch_via_nsepython(self, symbol: str) -> dict:
+        # nsepython unconditionally `print()`s notices like
+        # "Please use nse_fno() function to reduce latency." straight to
+        # stdout, which leaks into the agent's chat output. Redirect
+        # stdout while the call runs so those notices are swallowed.
         try:
-            raw = nse_eq(symbol)  # type: ignore[misc]
+            with contextlib.redirect_stdout(io.StringIO()):
+                raw = nse_eq(symbol)  # type: ignore[misc]
         except Exception as e:  # noqa: BLE001
             return {"error": f"nse_eq raised: {e}"}
 
