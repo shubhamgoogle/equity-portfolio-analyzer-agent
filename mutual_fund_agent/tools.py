@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from adapters.nse_bse_adapter import NseBseAdapter
 from adapters.tavily_adapter import TavilyAdapter
 from adapters.yfinance_adapter import YFinanceAdapter
 
@@ -20,6 +21,9 @@ from adapters.yfinance_adapter import YFinanceAdapter
 _yfinance_adapter = YFinanceAdapter()
 # Tavily client is constructed once and reused across tool calls.
 _tavily_adapter = TavilyAdapter()
+# NSE/BSE adapter wraps nsepython + nsetools + bsedata; instantiate once
+# so the BSE scrip-code table can be cached across calls.
+_nse_bse_adapter = NseBseAdapter()
 
 
 def _to_jsonable(value: Any) -> Any:
@@ -83,4 +87,32 @@ def get_stock_news(query: str) -> dict:
     return _to_jsonable(info)
 
 
-ALL_TOOLS = [get_stock_info, get_stock_news]
+def get_indian_stock_info(symbol: str) -> dict:
+    """Fetch a live quote for an Indian stock directly from NSE or BSE.
+
+    Prefer this over `get_stock_info` whenever the user asks about an
+    Indian-listed equity. Yahoo Finance's coverage of NSE/BSE tickers
+    is patchy (stale prices, missing fields, empty dicts), so this tool
+    queries the exchanges directly via `nsepython` / `nsetools` / `bsedata`.
+
+    Args:
+        symbol: Either
+            - an NSE symbol like "RELIANCE", "TCS", "INFY" (preferred), or
+            - a 6-digit BSE scrip code like "500325" (Reliance), "532540"
+              (TCS). All-digit input is routed straight to BSE.
+            - Do NOT pass Yahoo-style suffixes like ".NS" or ".BO".
+
+    Returns:
+        A normalized dict with keys: source, exchange, symbol,
+        companyName, industry, isin, lastPrice, change, pChange, open,
+        previousClose, dayHigh, dayLow, fiftyTwoWeekHigh,
+        fiftyTwoWeekLow, marketCap, lastUpdateTime, currency.
+
+        On failure, returns {"error": "...", "details": [...]} listing
+        which underlying library/exchange failed and why.
+    """
+    info = _nse_bse_adapter.get_stock_info(symbol)
+    return _to_jsonable(info)
+
+
+ALL_TOOLS = [get_stock_info, get_stock_news, get_indian_stock_info]
