@@ -14,12 +14,16 @@ Inspired by:
 
 from __future__ import annotations
 
+import logging
 import os
+import time
 from typing import Any
 
 from tavily import TavilyClient
 
 from adapters.base_adapter import BaseStockAdapter
+
+logger = logging.getLogger(__name__)
 
 
 class TavilyAdapter(BaseStockAdapter):
@@ -55,6 +59,8 @@ class TavilyAdapter(BaseStockAdapter):
             f"latest financial news, earnings, and analyst sentiment for {stock_name}"
         )
 
+        logger.info("Tavily search start: symbol=%r", stock_name)
+        started = time.perf_counter()
         try:
             response: Any = self._client.search(
                 query=query,
@@ -63,9 +69,23 @@ class TavilyAdapter(BaseStockAdapter):
                 include_answer=True,
             )
         except Exception as e:  # noqa: BLE001 — surface any client/network failure
+            logger.warning(
+                "Tavily search failed for %r after %.0fms: %s",
+                stock_name,
+                (time.perf_counter() - started) * 1000,
+                e,
+            )
             return {"error": f"Failed to fetch data from Tavily: {e}"}
 
+        elapsed_ms = (time.perf_counter() - started) * 1000
+
         if not isinstance(response, dict):
+            logger.warning(
+                "Tavily returned unexpected shape %s for %r after %.0fms",
+                type(response).__name__,
+                stock_name,
+                elapsed_ms,
+            )
             return {"error": f"Unexpected Tavily response type: {type(response).__name__}"}
 
         raw_results = response.get("results") or []
@@ -80,6 +100,17 @@ class TavilyAdapter(BaseStockAdapter):
             for r in raw_results
             if isinstance(r, dict)
         ]
+
+        # Single visible breadcrumb per successful Tavily call. The SDK
+        # itself is silent on success, so without this line a working
+        # Tavily call leaves no trace in the agent's stdout.
+        logger.info(
+            "Tavily search ok: symbol=%r results=%d answer=%s elapsed=%.0fms",
+            stock_name,
+            len(results),
+            "yes" if response.get("answer") else "no",
+            elapsed_ms,
+        )
 
         return {
             "query": query,
