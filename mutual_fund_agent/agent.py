@@ -27,8 +27,8 @@ from .tools import ALL_TOOLS
 #   "gemini/gemini-2.5-flash") and make sure the matching API key env
 # var is set. See https://docs.litellm.ai/docs/providers for the full
 # list of supported prefixes.
-MODEL = LiteLlm(model="groq/meta-llama/llama-4-scout-17b-16e-instruct")
-
+# MODEL = LiteLlm(model="groq/meta-llama/llama-4-scout-17b-16e-instruct")
+MODEL = LiteLlm(model="gemini-2.5-flash")
 INSTRUCTION = """\
 You are a helpful mutual fund and stock analysis assistant.
 
@@ -224,7 +224,7 @@ WORKFLOW
        Verdict
          End with a short, opinionated takeaway:
 
-            VERDICT: [BUY / HOLD / SELL / WATCHLIST]
+            VERDICT: [BUY / HOLD / SELL ]
             REASONING:
               - 3-5 punchy bullets weighing fundamentals + sentiment.
               - Explicitly call out any disagreement between sources
