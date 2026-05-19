@@ -1,6 +1,6 @@
-# Mutual Fund Analyzer Agent
+# Equity Portfolio Analyzer Agent
 
-An agentic stock / ETF / mutual fund analyzer that triangulates **four independent data sources** in a single tool call and synthesizes an opinionated **BUY / HOLD / SELL / WATCHLIST** verdict. Built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) with a swappable LLM via [LiteLLM](https://docs.litellm.ai/).
+An agentic equity / stock / ETF / mutual fund portfolio analyzer that triangulates **four independent data sources** in a single tool call and synthesizes an opinionated **BUY / HOLD / SELL / WATCHLIST** verdict. Built on Google's [Agent Development Kit (ADK)](https://google.github.io/adk-docs/) with a swappable LLM via [LiteLLM](https://docs.litellm.ai/).
 
 The agent is designed to be fast and explainable: every number in the final answer carries a source label, and disagreements between sources are surfaced explicitly rather than papered over.
 
@@ -15,13 +15,13 @@ Most "stock analysis" bots lean on a single data provider and inherit all of its
 | NSE / BSE     | Live INR quotes, sector P/E, VWAP, circuit limits, ASM/GSM  |
 | Tavily        | Live news, regulatory events, sentiment                     |
 
-The architecture and per-field coverage are catalogued in the **[data coverage audit canvas](.cursor/projects/Users-shubham-Documents-github-repos-mutual-fund-analyzer-agent/canvases/data-coverage-audit.canvas.tsx)** — open it in Cursor to see exactly which of ~115 standard equity-research data points each adapter surfaces.
+The architecture and per-field coverage are catalogued in the **[data coverage audit canvas](.cursor/projects/Users-shubham-Documents-github-repos-equity-portfolio-analyzer-agent/canvases/data-coverage-audit.canvas.tsx)** — open it in Cursor to see exactly which of ~115 standard equity-research data points each adapter surfaces.
 
 ## Architecture
 
 ```
                 ┌───────────────────────────────────────────────┐
-                │     mutual_fund_agent.agent.root_agent        │
+                │    equity_portfolio_agent.agent.root_agent    │
                 │  ADK Agent + LiteLLM(Llama-4-Maverick/Groq)   │
                 └────────────────────┬──────────────────────────┘
                                      │ one tool call
@@ -73,7 +73,7 @@ Key design choices:
 
 ```bash
 git clone <this-repo>
-cd mutual-fund-analyzer-agent
+cd equity-portfolio-analyzer-agent
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -102,7 +102,7 @@ adk web
 
 **ADK CLI** (single-shot, scriptable)
 ```bash
-adk run mutual_fund_agent
+adk run equity_portfolio_agent
 ```
 
 ## Configuration
@@ -115,11 +115,11 @@ All configuration lives in `.env`. Copy `.env.example` to get started.
 | `TAVILY_API_KEY` | **Yes** | Live news / sentiment. Free tier covers ~1000 queries/month. Get one at [app.tavily.com](https://app.tavily.com/). |
 | `TWELVE_API_KEY` | Optional | Cross-checks Yahoo's valuation + technical indicators. Free Basic plan is enough for US technicals; Indian-exchange coverage needs **Grow** plan or higher (see [Known limitations](#known-limitations--gotchas)). Get one at [twelvedata.com](https://twelvedata.com/account/api-keys). |
 | `TWELVE_DATA_CACHE_TTL` | Optional | TTL (seconds) for the TwelveData symbol cache. Default `300` (5 min). Set `0` to disable caching. |
-| `GOOGLE_API_KEY` *or* Vertex AI config | Optional | Only needed if you swap the agent's LLM to Gemini (see `mutual_fund_agent/agent.py`). |
+| `GOOGLE_API_KEY` *or* Vertex AI config | Optional | Only needed if you swap the agent's LLM to Gemini (see `equity_portfolio_agent/agent.py`). |
 
 ### Swapping the LLM provider
 
-The agent routes through LiteLLM, so changing the model is a one-line edit in `mutual_fund_agent/agent.py`:
+The agent routes through LiteLLM, so changing the model is a one-line edit in `equity_portfolio_agent/agent.py`:
 
 ```python
 MODEL = LiteLlm(model="groq/meta-llama/llama-4-scout-17b-16e-instruct")
@@ -204,19 +204,19 @@ See the coverage audit canvas in this workspace for the full row-by-row breakdow
 - **5-year CAGRs aren't computable.** Yahoo's free statement endpoints cap at 5 fiscal years, so 5y CAGRs (which need 6 datapoints) are mathematically impossible. The adapter computes 3y and 4y instead.
 - **NSE delivery %, bulk deals, FII/DII flows.** NSE does publish these, but each requires a separate scraper endpoint we haven't wired in. The current NSE adapter sticks to fields available in the single `nse_eq()` response.
 - **nsepython prints status notices to stdout.** The library `print()`s messages like "Please use nse_fno() function to reduce latency" — the adapter swallows them with `contextlib.redirect_stdout` so they don't leak into chat output.
-- **Groq rate limits.** The free tier has a generous but bounded TPM. If you hit it, swap to `groq/llama-3.3-70b-versatile` or another LiteLLM provider in `mutual_fund_agent/agent.py`.
+- **Groq rate limits.** The free tier has a generous but bounded TPM. If you hit it, swap to `groq/llama-3.3-70b-versatile` or another LiteLLM provider in `equity_portfolio_agent/agent.py`.
 
 ## Project layout
 
 ```
-mutual-fund-analyzer-agent/
+equity-portfolio-analyzer-agent/
 ├── adapters/                       # one file per data source
 │   ├── base_adapter.py             # BaseStockAdapter ABC
 │   ├── yfinance_adapter.py         # Yahoo Finance + 5y statements + derived ratios
 │   ├── twelvedata_adapter.py       # TwelveData quote + stats + profile + technicals (TTL-cached)
 │   ├── nse_bse_adapter.py          # nsepython → nsetools → bsedata fallback chain
 │   └── tavily_adapter.py           # Tavily web search for news / sentiment
-├── mutual_fund_agent/
+├── equity_portfolio_agent/
 │   ├── agent.py                    # root_agent: ADK Agent + LiteLLM model + INSTRUCTION
 │   └── tools.py                    # analyze_security(): parallel fan-out + symbol normalization
 ├── main.py                         # interactive CLI driver
@@ -230,13 +230,13 @@ mutual-fund-analyzer-agent/
 ### Adding a new data source
 
 1. Create `adapters/<source>_adapter.py` implementing `BaseStockAdapter.get_stock_info(name) -> dict`.
-2. Register it in the fan-out inside `mutual_fund_agent/tools.py::analyze_security`.
-3. Add a section to the `INSTRUCTION` block in `mutual_fund_agent/agent.py` describing the new key's shape so the LLM knows how to read it.
-4. Add rows to the [coverage audit canvas](.cursor/projects/Users-shubham-Documents-github-repos-mutual-fund-analyzer-agent/canvases/data-coverage-audit.canvas.tsx) to track what newly went from missing → covered.
+2. Register it in the fan-out inside `equity_portfolio_agent/tools.py::analyze_security`.
+3. Add a section to the `INSTRUCTION` block in `equity_portfolio_agent/agent.py` describing the new key's shape so the LLM knows how to read it.
+4. Add rows to the [coverage audit canvas](.cursor/projects/Users-shubham-Documents-github-repos-equity-portfolio-analyzer-agent/canvases/data-coverage-audit.canvas.tsx) to track what newly went from missing → covered.
 
 ### Tweaking the verdict style
 
-The `INSTRUCTION` constant in `mutual_fund_agent/agent.py` is the single source of truth for how the agent structures its reply (Snapshot → Fundamentals → Technicals → Recent context → Verdict). Edit it to change tone, section ordering, or what gets emphasized.
+The `INSTRUCTION` constant in `equity_portfolio_agent/agent.py` is the single source of truth for how the agent structures its reply (Snapshot → Fundamentals → Technicals → Recent context → Verdict). Edit it to change tone, section ordering, or what gets emphasized.
 
 ## License
 

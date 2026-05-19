@@ -5,7 +5,7 @@ Usage:
     python main.py "How is AAPL doing?"  # one-shot query, then drop into chat
 
 You can also run this agent with the ADK CLI/UI from the project root:
-    adk run mutual_fund_agent
+    adk run equity_portfolio_agent
     adk web
 """
 
@@ -19,9 +19,9 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from mutual_fund_agent.agent import root_agent
+from equity_portfolio_agent.agent import root_agent
 
-APP_NAME = "mutual_fund_analyzer"
+APP_NAME = "equity_portfolio_analyzer"
 USER_ID = "local_user"
 
 
@@ -51,7 +51,7 @@ async def chat() -> None:
         session_service=session_service,
     )
 
-    print("=== Mutual Fund Analyzer Agent ===")
+    print("=== Equity & Portfolio Analyzer Agent ===")
     print("Ask about any stock, ETF or mutual fund.")
     print("Type 'exit' or press Ctrl-D to quit.\n")
 

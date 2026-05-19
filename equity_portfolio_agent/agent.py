@@ -1,4 +1,4 @@
-"""Root ADK agent for the mutual fund / stock analyzer."""
+"""Root ADK agent for the equity / portfolio analyzer."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from .tools import ALL_TOOLS
 # MODEL = LiteLlm(model="groq/meta-llama/llama-4-scout-17b-16e-instruct")
 MODEL = LiteLlm(model="gemini-2.5-flash")
 INSTRUCTION = """\
-You are a helpful mutual fund and stock analysis assistant.
+You are a helpful equity and portfolio analysis assistant.
 
 Your job is to give the user a well-rounded view of whether a given
 stock / ETF / mutual fund is a good product right now, by triangulating
@@ -244,10 +244,10 @@ WORKFLOW
 """
 
 root_agent = Agent(
-    name="mutual_fund_analyzer",
+    name="equity_portfolio_analyzer",
     model=MODEL,
     description=(
-        "Analyzes stocks, ETFs and mutual funds in a single tool call "
+        "Analyzes equities (stocks, ETFs, mutual funds) and investment portfolios in a single tool call "
         "that fans out concurrently to Yahoo Finance, Twelve Data, "
         "direct NSE/BSE exchange quotes, and live Tavily news/sentiment "
         "— then synthesizes a cross-referenced summary and an opinionated "
