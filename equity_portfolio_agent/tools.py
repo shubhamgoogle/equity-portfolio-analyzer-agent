@@ -23,6 +23,7 @@ import time
 from typing import Any
 
 from adapters.nse_bse_adapter import NseBseAdapter
+from adapters.screener_adapter import ScreenerAdapter
 from adapters.tavily_adapter import TavilyAdapter
 from adapters.twelvedata_adapter import TwelveDataAdapter
 from adapters.yfinance_adapter import YFinanceAdapter
@@ -32,6 +33,7 @@ from adapters.yfinance_adapter import YFinanceAdapter
 _yfinance_adapter = YFinanceAdapter()
 _twelvedata_adapter = TwelveDataAdapter()
 _nse_bse_adapter = NseBseAdapter()
+_screener_adapter = ScreenerAdapter()
 _tavily_adapter = TavilyAdapter()
 
 # Per-adapter timeout (seconds). The NSE scraper occasionally takes a
@@ -162,7 +164,7 @@ def analyze_security(symbol: str) -> dict:
     td_symbol = _normalize_for_twelvedata(raw_symbol)
     indian = _looks_indian(raw_symbol)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
         fut_yahoo = pool.submit(
             _safe_call, "yfinance", _yfinance_adapter.get_stock_info, raw_symbol
         )
@@ -173,8 +175,12 @@ def analyze_security(symbol: str) -> dict:
             fut_nse = pool.submit(
                 _safe_call, "nse_bse", _nse_bse_adapter.get_stock_info, nse_symbol
             )
+            fut_screener = pool.submit(
+                _safe_call, "screener", _screener_adapter.get_stock_info, nse_symbol
+            )
         else:
             fut_nse = None
+            fut_screener = None
         fut_news = pool.submit(
             _safe_call, "tavily", _tavily_adapter.get_stock_info, raw_symbol
         )
@@ -192,12 +198,15 @@ def analyze_security(symbol: str) -> dict:
         yahoo = _resolve(fut_yahoo)
         twelve = _resolve(fut_twelve)
         nse = _resolve(fut_nse)
+        screener = _resolve(fut_screener)
         news = _resolve(fut_news)
 
     if nse is None:
         nse = {"skipped": "Symbol does not look NSE/BSE listed; Indian-exchange call skipped."}
+    if screener is None:
+        screener = {"skipped": "Symbol does not look NSE/BSE listed; Screener call skipped."}
 
-    sources = (yahoo, twelve, nse, news)
+    sources = (yahoo, twelve, nse, screener, news)
     all_failed = all(
         isinstance(s, dict) and "error" in s and "skipped" not in s
         for s in sources
@@ -214,6 +223,7 @@ def analyze_security(symbol: str) -> dict:
         "yahoo": yahoo,
         "twelvedata": twelve,
         "nse_bse": nse,
+        "screener": screener,
         "news": news,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
         "all_failed": all_failed,

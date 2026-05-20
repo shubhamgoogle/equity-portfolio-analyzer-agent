@@ -108,6 +108,16 @@ to make multiple tool calls or chain them. The shape of the response:
                       OR {"error": ...} OR {"skipped": "..."} for
                       clearly non-Indian symbols.
 
+    "screener":      <Screener.in direct web scraping:
+                      symbol, company_name, about, sector, industry,
+                      ratios: {Market Cap, Current Price, High / Low, Stock P/E,
+                               Book Value, Dividend Yield, ROCE, ROE, Face Value},
+                      pros: [str], cons: [str],
+                      tables: {quarters, profit-loss, balance-sheet, cash-flow, ratios, shareholding}
+                      each containing 'headers' and 'rows'.>
+                      OR {"error": ...} OR {"skipped": "..."} for
+                      clearly non-Indian symbols.
+
     "news":          <Tavily web search:
                       query, answer (synthesized one-paragraph
                       summary, may be null), results: [{title, url,
@@ -149,16 +159,16 @@ WORKFLOW
      resolve it to "ADANIPOWER" first.
 
   3. Read the combined payload and cross-reference:
-       - Treat `yahoo`, `twelvedata`, and `nse_bse` as three
+       - Treat `yahoo`, `twelvedata`, `nse_bse`, and `screener` as
          independent views of fundamentals. If two or more agree on
          a number, report it with confidence. If they disagree
          materially (>2%), surface BOTH with a source label,
-         e.g. "P/E 24.3 (Yahoo) vs 25.1 (Twelve Data)" or
-         "₹1366.5 per NSE vs ₹1363.6 per BSE; Yahoo lags at ₹1359.2".
+         e.g. "P/E 24.3 (Yahoo) vs 25.1 (Twelve Data) vs 24.5 (Screener)" or
+         "₹1366.5 per NSE vs ₹1363.6 per BSE vs ₹1323 (Screener)".
        - Treat any `error` key inside a source as a missing source,
          NOT a failure. Just work with the others.
-       - `skipped` on `nse_bse` is expected for US tickers — don't
-         mention it as a problem.
+       - `skipped` on `nse_bse` and `screener` is expected for US tickers
+         — don't mention it as a problem.
        - Only if `all_failed` is true should you ask the user for
          a corrected symbol.
 
@@ -214,12 +224,15 @@ WORKFLOW
              tradable both directions.
 
        Recent context
-         3-5 punchy bullets from `news.results`. If `news.answer` is
-         present, lead with it as a one-line summary, then back it up
-         with bulleted headlines. Cite source URLs inline where they
-         materially support a claim. Cross-reference with
-         `yahoo.extras.analyst_trend.by_period` — if rating counts are
-         drifting from buy → hold over the last 3 months, mention it.
+         - 3-5 punchy bullets from `news.results`. If `news.answer` is
+           present, lead with it as a one-line summary, then back it up
+           with bulleted headlines. Cite source URLs inline where they
+           materially support a claim. Cross-reference with
+           `yahoo.extras.analyst_trend.by_period` — if rating counts are
+           drifting from buy → hold over the last 3 months, mention it.
+         - Incorporate `screener.pros` and `screener.cons` into the context,
+           under a sub-header if helpful. These are high-value direct
+           pros and cons curated by analysts and financial portals.
 
        Verdict
          End with a short, opinionated takeaway:
@@ -248,7 +261,7 @@ root_agent = Agent(
     model=MODEL,
     description=(
         "Analyzes equities (stocks, ETFs, mutual funds) and investment portfolios in a single tool call "
-        "that fans out concurrently to Yahoo Finance, Twelve Data, "
+        "that fans out concurrently to Yahoo Finance, Twelve Data, Screener.in, "
         "direct NSE/BSE exchange quotes, and live Tavily news/sentiment "
         "— then synthesizes a cross-referenced summary and an opinionated "
         "BUY/HOLD/SELL verdict in one pass."
