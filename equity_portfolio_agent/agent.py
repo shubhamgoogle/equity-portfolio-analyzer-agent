@@ -124,6 +124,13 @@ to make multiple tool calls or chain them. The shape of the response:
                       content, score, published_date}, ...]>
                       OR {"error": ...}
 
+    "alphavantage":  <Alpha Vantage: quote (open, high, low, price, volume,
+                      change, changePercent, previousClose), overview
+                      (company information, valuation ratios, margins,
+                      Beta, targetPrice, analyst counts, and more),
+                      earnings (historical EPS actuals vs estimates)>
+                      OR {"error": ...}
+
     "elapsed_ms":    <int — useful for debugging>
     "all_failed":    <bool — true ONLY if every source errored>
   }

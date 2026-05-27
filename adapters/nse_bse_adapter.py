@@ -188,7 +188,6 @@ class NseBseAdapter(BaseStockAdapter):
             errors.append(f"bsedata: {result['error']}")
         elif self._get_bse() is None:
             errors.append("bsedata: unavailable")
-
         return {
             "error": f"All NSE/BSE lookups failed for '{symbol}'.",
             "details": errors,

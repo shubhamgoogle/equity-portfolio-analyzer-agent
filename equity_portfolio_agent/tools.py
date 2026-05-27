@@ -27,6 +27,7 @@ from adapters.screener_adapter import ScreenerAdapter
 from adapters.tavily_adapter import TavilyAdapter
 from adapters.twelvedata_adapter import TwelveDataAdapter
 from adapters.yfinance_adapter import YFinanceAdapter
+from adapters.alphavantage_adapter import AlphaVantageAdapter
 
 # Adapter instances are constructed once and reused across calls so that
 # any internal caches (HTTP sessions, BSE scrip-code table, etc.) survive.
@@ -35,6 +36,7 @@ _twelvedata_adapter = TwelveDataAdapter()
 _nse_bse_adapter = NseBseAdapter()
 _screener_adapter = ScreenerAdapter()
 _tavily_adapter = TavilyAdapter()
+_alphavantage_adapter = AlphaVantageAdapter()
 
 # Per-adapter timeout (seconds). The NSE scraper occasionally takes a
 # while warming its cookie session, and TwelveData now serializes 4
@@ -184,6 +186,9 @@ def analyze_security(symbol: str) -> dict:
         fut_news = pool.submit(
             _safe_call, "tavily", _tavily_adapter.get_stock_info, raw_symbol
         )
+        fut_av = pool.submit(
+            _safe_call, "alphavantage", _alphavantage_adapter.get_stock_info, raw_symbol
+        )
 
         def _resolve(fut):
             if fut is None:
@@ -200,13 +205,14 @@ def analyze_security(symbol: str) -> dict:
         nse = _resolve(fut_nse)
         screener = _resolve(fut_screener)
         news = _resolve(fut_news)
+        alphavantage = _resolve(fut_av)
 
     if nse is None:
         nse = {"skipped": "Symbol does not look NSE/BSE listed; Indian-exchange call skipped."}
     if screener is None:
         screener = {"skipped": "Symbol does not look NSE/BSE listed; Screener call skipped."}
 
-    sources = (yahoo, twelve, nse, screener, news)
+    sources = (yahoo, twelve, nse, screener, news, alphavantage)
     all_failed = all(
         isinstance(s, dict) and "error" in s and "skipped" not in s
         for s in sources
@@ -225,6 +231,7 @@ def analyze_security(symbol: str) -> dict:
         "nse_bse": nse,
         "screener": screener,
         "news": news,
+        "alphavantage": alphavantage,
         "elapsed_ms": int((time.perf_counter() - started) * 1000),
         "all_failed": all_failed,
     }
